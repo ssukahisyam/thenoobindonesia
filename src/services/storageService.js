@@ -1,9 +1,11 @@
-// Multi-Tournament Storage Service with LocalStorage and IndexedDB support
+// Multi-Tournament Storage Service with LocalStorage, Auto-Snapshots, and Import/Export
 import { INITIAL_DEMO_TOURNAMENT } from '../models/tournament';
 
 const STORAGE_KEY_PREFIX = 'efootball_t2_';
 const TOURNAMENT_LIST_KEY = 'efootball_t2_list';
 const ACTIVE_TOURNAMENT_ID_KEY = 'efootball_t2_active_id';
+const SNAPSHOTS_KEY_PREFIX = 'efootball_snapshots_';
+const MAX_LOCAL_SNAPSHOTS = 25;
 
 class StorageService {
   constructor() {
@@ -61,7 +63,7 @@ class StorageService {
     }
   }
 
-  saveTournament(tournament) {
+  saveTournament(tournament, options = {}) {
     if (!tournament || !tournament.id) return false;
 
     try {
@@ -94,6 +96,12 @@ class StorageService {
       }
 
       localStorage.setItem(TOURNAMENT_LIST_KEY, JSON.stringify(list));
+
+      // Auto create local snapshot
+      if (options.createSnapshot !== false) {
+        this.createLocalSnapshot(updated, options.snapshotLabel || 'Auto Local Snapshot');
+      }
+
       return true;
     } catch (e) {
       console.error('Error saving tournament:', e);
@@ -101,9 +109,56 @@ class StorageService {
     }
   }
 
+  // --- LOCAL SNAPSHOTS & HISTORY ENGINE ---
+
+  createLocalSnapshot(tournament, label = 'Auto Snapshot') {
+    if (!tournament || !tournament.id) return;
+
+    try {
+      const key = `${SNAPSHOTS_KEY_PREFIX}${tournament.id}`;
+      let snapshots = this.getLocalSnapshots(tournament.id);
+
+      const finishedCount = (tournament.groupMatches || []).filter(
+        m => m.homeScore !== null && m.homeScore !== undefined
+      ).length;
+
+      const newSnap = {
+        key: `local_snap_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        label,
+        tournamentName: tournament.name || 'Turnamen',
+        tournamentId: tournament.id,
+        finishedCount,
+        totalMatches: tournament.groupMatches?.length || 0,
+        tournamentState: tournament
+      };
+
+      snapshots.unshift(newSnap);
+      if (snapshots.length > MAX_LOCAL_SNAPSHOTS) {
+        snapshots = snapshots.slice(0, MAX_LOCAL_SNAPSHOTS);
+      }
+
+      localStorage.setItem(key, JSON.stringify(snapshots));
+    } catch (e) {
+      console.warn('Could not create local snapshot:', e);
+    }
+  }
+
+  getLocalSnapshots(tournamentId) {
+    if (!tournamentId) return [];
+    try {
+      const raw = localStorage.getItem(`${SNAPSHOTS_KEY_PREFIX}${tournamentId}`);
+      if (!raw) return [];
+      return JSON.parse(raw);
+    } catch (e) {
+      return [];
+    }
+  }
+
   deleteTournament(id) {
     try {
       localStorage.removeItem(`${STORAGE_KEY_PREFIX}${id}`);
+      localStorage.removeItem(`${SNAPSHOTS_KEY_PREFIX}${id}`);
       let list = this.getTournamentsList().filter(t => t.id !== id);
       localStorage.setItem(TOURNAMENT_LIST_KEY, JSON.stringify(list));
 
@@ -167,9 +222,10 @@ class StorageService {
         this.setActiveTournamentId(parsed.id);
         return { success: true, count: 1 };
       }
-      return { success: false, error: 'Format JSON tidak dikenali' };
+
+      return { success: false, error: 'Format JSON turnamen tidak valid.' };
     } catch (e) {
-      return { success: false, error: e.message };
+      return { success: false, error: 'Gagal membaca file JSON: ' + e.message };
     }
   }
 }

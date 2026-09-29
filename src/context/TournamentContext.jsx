@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { storage } from '../services/storageService';
-import { firebaseService } from '../services/firebaseService';
+import { firebaseService, mergeTournamentData } from '../services/firebaseService';
 import {
   generateRoundRobinMatches,
   generateSingleEliminationBracket,
@@ -139,10 +139,15 @@ export function TournamentProvider({ children }) {
               ...tData,
               id: tData.id || tId
             };
-            storage.saveTournament(formatted);
+
+            const existingLocal = storage.getTournamentById(formatted.id);
+            // Use smart merge so a stale remote update doesn't erase local scores
+            const merged = mergeTournamentData(existingLocal, formatted);
+
+            storage.saveTournament(merged, { createSnapshot: false });
 
             if (formatted.id === targetActiveId) {
-              activeToSet = formatted;
+              activeToSet = merged;
             }
           }
         }
@@ -165,16 +170,40 @@ export function TournamentProvider({ children }) {
     };
   }, [loadActiveTournament, refreshList]);
 
-  // Save changes to active tournament (LocalStorage + Firebase Realtime DB)
-  const saveActiveTournament = useCallback((updatedTournament) => {
+  // Save changes to active tournament (LocalStorage + Firebase Realtime DB + Auto-Snapshots)
+  const saveActiveTournament = useCallback((updatedTournament, options = {}) => {
     if (!updatedTournament) return;
     setActiveTournament(updatedTournament);
-    storage.saveTournament(updatedTournament);
+    storage.saveTournament(updatedTournament, options);
     refreshList();
 
-    // Async push to Firebase Cloud
-    firebaseService.saveTournamentToCloud(updatedTournament);
+    // Async push to Firebase Cloud with auto snapshot
+    firebaseService.saveTournamentToCloud(updatedTournament, options);
   }, [refreshList]);
+
+  // Create manual backup snapshot
+  const createManualBackup = useCallback(async (label = 'Manual Backup') => {
+    if (!activeTournament) return;
+    sound.playClick();
+    storage.createLocalSnapshot(activeTournament, label);
+    await firebaseService.createCloudSnapshot(activeTournament, label);
+    showToast(`Snapshot '${label}' berhasil dibuat!`);
+  }, [activeTournament, showToast]);
+
+  // Restore state from snapshot
+  const restoreSnapshot = useCallback((snapshotState) => {
+    if (!snapshotState || !snapshotState.id) return;
+    sound.playClick();
+    
+    // Save current as safety backup before restoring
+    if (activeTournament) {
+      storage.createLocalSnapshot(activeTournament, 'Sebelum Restore Snapshot');
+      firebaseService.createCloudSnapshot(activeTournament, 'Sebelum Restore Snapshot');
+    }
+
+    saveActiveTournament(snapshotState, { snapshotLabel: 'Restored from Snapshot' });
+    showToast(`Turnamen berhasil dipulihkan ke versi '${snapshotState.name}'!`);
+  }, [activeTournament, saveActiveTournament, showToast]);
 
   // Switch active tournament
   const switchTournament = useCallback((id) => {
@@ -218,13 +247,13 @@ export function TournamentProvider({ children }) {
     // Automatically build all schedules and brackets
     fullTournament = buildTournamentStructure(fullTournament);
 
-    storage.saveTournament(fullTournament);
+    storage.saveTournament(fullTournament, { snapshotLabel: 'Turnamen Dibuat' });
     storage.setActiveTournamentId(fullTournament.id);
     setActiveTournament(fullTournament);
     refreshList();
 
     // Sync to Firebase Cloud
-    firebaseService.saveTournamentToCloud(fullTournament);
+    firebaseService.saveTournamentToCloud(fullTournament, { snapshotLabel: 'Turnamen Dibuat' });
 
     showToast(`Turnamen '${fullTournament.name}' (${fullTournament.teams.length} Peserta) berhasil dibuat!`);
     return fullTournament;
@@ -357,7 +386,7 @@ export function TournamentProvider({ children }) {
     }
 
     updated = syncStandingsToPlayoffs(updated, newStandings);
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Input Skor: ${match.home} vs ${match.away}` });
   }, [activeTournament, saveActiveTournament, syncStandingsToPlayoffs]);
 
   // Update Knockout (Single Elim) match score
@@ -384,7 +413,7 @@ export function TournamentProvider({ children }) {
       knockoutMatches: evaluated
     };
 
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Skor Knockout: ${match.homeTeam} vs ${match.awayTeam}` });
   }, [activeTournament, saveActiveTournament]);
 
   // Update Double Elimination match score (supports playin, upper, lower, grand_final)
@@ -422,23 +451,31 @@ export function TournamentProvider({ children }) {
       doubleElimination: evaluated
     };
 
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Skor Playoff: ${match.homeTeam} vs ${match.awayTeam}` });
   }, [activeTournament, saveActiveTournament]);
 
-  // Regenerate all schedules & brackets
+  // Regenerate all schedules & brackets (auto safety backup before regen)
   const regenerateTournamentSchedule = useCallback(() => {
     if (!activeTournament) return;
     sound.playClick();
 
+    // Create safety snapshot before regenerating
+    storage.createLocalSnapshot(activeTournament, 'Sebelum Generate Ulang');
+    firebaseService.createCloudSnapshot(activeTournament, 'Sebelum Generate Ulang');
+
     const t = buildTournamentStructure(activeTournament);
-    saveActiveTournament(t);
-    showToast('Jadwal & format turnamen berhasil digenerate ulang!');
+    saveActiveTournament(t, { snapshotLabel: 'Generate Ulang Jadwal' });
+    showToast('Jadwal & format turnamen berhasil digenerate ulang! Backup otomatis telah disimpan.');
   }, [activeTournament, saveActiveTournament, showToast]);
 
-  // Reset scores only
+  // Reset scores only (auto safety backup before reset)
   const resetScores = useCallback(() => {
     if (!activeTournament) return;
     sound.playClick();
+
+    // Create safety snapshot before resetting
+    storage.createLocalSnapshot(activeTournament, 'Sebelum Reset Skor');
+    firebaseService.createCloudSnapshot(activeTournament, 'Sebelum Reset Skor');
 
     const t = { ...activeTournament };
     if (t.groupMatches) {
@@ -471,8 +508,8 @@ export function TournamentProvider({ children }) {
       );
     }
 
-    saveActiveTournament(t);
-    showToast('Semua skor berhasil direset.');
+    saveActiveTournament(t, { snapshotLabel: 'Reset Skor' });
+    showToast('Semua skor berhasil direset. Snapshot cadangan otomatis telah disimpan!');
   }, [activeTournament, saveActiveTournament, showToast]);
 
   // Add single team
@@ -498,7 +535,7 @@ export function TournamentProvider({ children }) {
     };
 
     updated = buildTournamentStructure(updated);
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Tambah Peserta: ${trimmed}` });
     showToast(`'${trimmed}' berhasil ditambahkan dan jadwal diperbarui!`);
   }, [activeTournament, saveActiveTournament, showToast]);
 
@@ -532,7 +569,7 @@ export function TournamentProvider({ children }) {
     };
 
     updated = buildTournamentStructure(updated);
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Bulk Tambah ${newTeams.length} Peserta` });
     showToast(`Berhasil menambahkan ${newTeams.length} peserta dan menyusun jadwal!`);
   }, [activeTournament, saveActiveTournament, showToast]);
 
@@ -550,7 +587,7 @@ export function TournamentProvider({ children }) {
     };
 
     updated = buildTournamentStructure(updated);
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Hapus Peserta: ${teamToRemove.name || teamToRemove}` });
     showToast(`'${teamToRemove.name || teamToRemove}' telah dihapus.`);
   }, [activeTournament, saveActiveTournament, showToast]);
 
@@ -566,7 +603,7 @@ export function TournamentProvider({ children }) {
     };
 
     updated = buildTournamentStructure(updated);
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: 'Ubah Pengaturan' });
   }, [activeTournament, saveActiveTournament]);
 
   // Set Team Group Assignment
@@ -595,7 +632,7 @@ export function TournamentProvider({ children }) {
       groupMatches: newMatches
     };
 
-    saveActiveTournament(updated);
+    saveActiveTournament(updated, { snapshotLabel: `Pindah Grup: ${teamName} -> ${newGroup}` });
   }, [activeTournament, saveActiveTournament]);
 
   const value = {
@@ -614,6 +651,8 @@ export function TournamentProvider({ children }) {
     updateDoubleElimScore,
     regenerateTournamentSchedule,
     resetScores,
+    createManualBackup,
+    restoreSnapshot,
     addTeam,
     bulkAddTeams,
     removeTeam,

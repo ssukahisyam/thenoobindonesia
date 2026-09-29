@@ -12,6 +12,7 @@ import TournamentListModal from './components/modals/TournamentListModal';
 import CreateTournamentModal from './components/modals/CreateTournamentModal';
 import BulkAddTeamsModal from './components/modals/BulkAddTeamsModal';
 import CloudSyncModal from './components/modals/CloudSyncModal';
+import HistoryBackupModal from './components/modals/HistoryBackupModal';
 
 function MainLayout() {
   const { activeTournament } = useTournament();
@@ -20,6 +21,7 @@ function MainLayout() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   // Auto-switch tabs based on tournament format
   useEffect(() => {
@@ -42,6 +44,7 @@ function MainLayout() {
         onOpenTournamentList={() => setIsTournamentListOpen(true)}
         onOpenCreateModal={() => setIsCreateModalOpen(true)}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
+        onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -104,12 +107,17 @@ function MainLayout() {
         onClose={() => setIsCloudModalOpen(false)}
       />
 
+      <HistoryBackupModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+      />
+
       {/* Global Toast */}
       <Toast />
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-4 text-center text-xs text-slate-500">
-        <p>eFootball Tournament Manager PRO v2 • Firebase Realtime Database Synced</p>
+        <p>eFootball Tournament Manager PRO v2 • Firebase Realtime Database Synced with Auto-Snapshots</p>
       </footer>
     </div>
   );

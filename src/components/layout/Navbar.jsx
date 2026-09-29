@@ -11,7 +11,7 @@ import {
   Share2,
   ChevronDown,
   Cloud,
-  Wifi
+  History
 } from 'lucide-react';
 
 export default function Navbar({
@@ -19,7 +19,8 @@ export default function Navbar({
   setActiveTab,
   onOpenTournamentList,
   onOpenCreateModal,
-  onOpenCloudModal
+  onOpenCloudModal,
+  onOpenHistoryModal
 }) {
   const { activeTournament, tournamentList, cloudStatus } = useTournament();
 
@@ -56,6 +57,7 @@ export default function Navbar({
           badge: isDoubleElim ? 'Upper/Lower' : null
         }]
       : []),
+    // Wheel Spin is only relevant for CUP mode with groups (like UCL / World Cup)
     ...(isCup
       ? [{ id: 'wheel', label: 'Undian Wheel Spin', icon: Dices, badge: 'Live Draw' }]
       : []),
@@ -99,6 +101,16 @@ export default function Navbar({
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* History / Backup Snapshots Button */}
+          <button
+            onClick={onOpenHistoryModal}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-400 hover:text-amber-300"
+            title="Riwayat Snapshot & Pemulihan Data (Cloud/Lokal)"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px] font-bold">Riwayat Backup</span>
+          </button>
+
           {/* Cloud Sync Status Indicator */}
           <button
             onClick={onOpenCloudModal}

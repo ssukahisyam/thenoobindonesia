@@ -5,43 +5,48 @@ import {
   Users,
   Plus,
   Trash2,
-  RotateCcw,
   RefreshCw,
-  GitFork,
-  Layers,
-  ClipboardPaste,
+  RotateCcw,
+  Check,
   Shield,
-  X
+  Layers,
+  GitFork,
+  ClipboardPaste,
+  History,
+  Camera
 } from 'lucide-react';
 
-export default function SetupView({ onOpenBulkModal }) {
+export default function SetupView({ onOpenBulkModal, onOpenHistoryModal }) {
   const {
     activeTournament,
-    updateConfig,
     addTeam,
     removeTeam,
+    updateConfig,
     setTeamGroup,
     regenerateTournamentSchedule,
     resetScores,
-    showToast
+    createManualBackup
   } = useTournament();
 
   const [inputTeamName, setInputTeamName] = useState('');
   const [inputPlayerName, setInputPlayerName] = useState('');
 
-  if (!activeTournament) return null;
+  if (!activeTournament) {
+    return (
+      <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl text-slate-400">
+        Pilih atau buat turnamen terlebih dahulu.
+      </div>
+    );
+  }
 
-  const mode = activeTournament.mode;
-  const isLeague = mode === 'league';
+  const { config, teams, mode } = activeTournament;
   const isCup = mode === 'cup';
-  const config = activeTournament.config || {};
-  const teams = activeTournament.teams || [];
-  const groupKeys = Object.keys(activeTournament.groups || {});
+  const isLeague = mode === 'league';
+  const groupKeys = isCup ? ['A', 'B', 'C', 'D'].slice(0, config.groupCount || 2) : [];
 
   const handleAddTeamSubmit = (e) => {
     e.preventDefault();
     if (!inputTeamName.trim()) return;
-
     addTeam(inputTeamName, inputPlayerName);
     setInputTeamName('');
     setInputPlayerName('');
@@ -50,103 +55,119 @@ export default function SetupView({ onOpenBulkModal }) {
   return (
     <div className="space-y-6">
       
-      {/* View Header */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
-        
-        <div className="border-b border-slate-800 pb-4 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-              <Settings className="w-5 h-5 text-purple-400" />
-              <span>Pengaturan Format & Peserta Turnamen</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Sesuaikan aturan leg, zona playoff Upper/Lower bracket, dan kelola daftar peserta.
-            </p>
+      {/* Header Banner */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <Settings className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white">
+                Pengaturan Turnamen: {activeTournament.name}
+              </h2>
+              <p className="text-xs text-slate-400">
+                Sesuaikan format kompetisi, sistem playoff, poin, dan kelola peserta
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => createManualBackup(`Manual Snapshot (${new Date().toLocaleTimeString('id-ID')})`)}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              title="Buat Cadangan Snapshot ke Cloud & Lokal Sekarang"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Simpan Snapshot Sekarang</span>
+            </button>
           </div>
         </div>
 
-        {/* Configuration Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Format & Rules Config Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           
-          {/* Leg Matchday */}
-          <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
-              Leg Fase Grup / Liga:
-            </label>
-            <select
-              value={config.groupLegs || 1}
-              onChange={(e) => updateConfig({ groupLegs: parseInt(e.target.value, 10) })}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
-            >
-              <option value="1">1 Leg (Single Match)</option>
-              <option value="2">2 Leg (Home & Away)</option>
-            </select>
-          </div>
-
-          {/* Leg Knockout */}
-          <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
-              Leg Babak Playoff:
-            </label>
-            <select
-              value={config.knockoutLegs || 1}
-              onChange={(e) => updateConfig({ knockoutLegs: parseInt(e.target.value, 10) })}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
-            >
-              <option value="1">1 Leg (Tunggal / Single Match)</option>
-              <option value="2">2 Leg (Agregat Home & Away)</option>
-            </select>
-          </div>
-
-          {/* Cup Group Count */}
-          {isCup && (
-            <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
-                Jumlah Grup Penyisihan:
+          {/* Group / League Legs */}
+          {mode !== 'knockout' && (
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+              <label className="text-xs font-bold text-slate-300 block">
+                Jumlah Putaran {isLeague ? 'Liga' : 'Fase Grup'}:
               </label>
               <select
-                value={config.groupCount || 2}
-                onChange={(e) => updateConfig({ groupCount: parseInt(e.target.value, 10) })}
+                value={config.groupLegs || 1}
+                onChange={(e) => updateConfig({ groupLegs: parseInt(e.target.value, 10) })}
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
               >
-                <option value="2">2 Grup (Grup A & B)</option>
-                <option value="4">4 Grup (Grup A, B, C, D)</option>
-                <option value="8">8 Grup (Grup A s/d H)</option>
+                <option value="1">1 Leg (Single Round Robin)</option>
+                <option value="2">2 Leg (Home & Away - Rekomendasi)</option>
               </select>
+              <p className="text-[11px] text-slate-500 italic">
+                Setiap peserta akan bertanding {config.groupLegs || 1} kali melawan masing-masing lawan.
+              </p>
             </div>
           )}
 
-          {/* League Playoff System Selection */}
-          {isLeague && (
-            <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
-                Sistem Playoff Liga:
+          {/* Points System */}
+          {mode !== 'knockout' && (
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+              <label className="text-xs font-bold text-slate-300 block">
+                Sistem Poin (M/S/K):
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-bold">Menang</span>
+                  <input
+                    type="number"
+                    value={config.winPts ?? 3}
+                    onChange={(e) => updateConfig({ winPts: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-bold text-white text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-bold">Seri</span>
+                  <input
+                    type="number"
+                    value={config.drawPts ?? 1}
+                    onChange={(e) => updateConfig({ drawPts: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-bold text-white text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-bold">Kalah</span>
+                  <input
+                    type="number"
+                    value={config.lossPts ?? 0}
+                    onChange={(e) => updateConfig({ lossPts: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs font-bold text-white text-center"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tie Breaker Rules */}
+          {mode !== 'knockout' && (
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+              <label className="text-xs font-bold text-slate-300 block">
+                Urutan Penentu Klasemen Seri:
               </label>
               <select
-                value={config.hasPlayoffs ? config.playoffType : 'none'}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === 'none') {
-                    updateConfig({ hasPlayoffs: false, playoffType: 'none' });
-                  } else {
-                    updateConfig({ hasPlayoffs: true, playoffType: val });
-                  }
-                }}
+                value={config.tieBreaker || 'pts_gd_gf_h2h'}
+                onChange={(e) => updateConfig({ tieBreaker: e.target.value })}
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-400"
               >
-                <option value="double_elim">🔥 Upper & Lower Bracket (Double Elim)</option>
-                <option value="single_elim">⚡ Single Elimination Playoff</option>
-                <option value="none">⚪ Liga Murni (Tanpa Playoff)</option>
+                <option value="pts_gd_gf_h2h">Poin ➔ Selisih Gol (GD) ➔ Produktivitas (GF) ➔ Head-to-Head</option>
+                <option value="pts_h2h_gd_gf">Poin ➔ Head-to-Head ➔ Selisih Gol (GD) ➔ Produktivitas (GF)</option>
               </select>
             </div>
           )}
 
         </div>
 
-        {/* League Playoff Slots Configuration */}
+        {/* Playoff Configuration (for League mode) */}
         {isLeague && config.hasPlayoffs && (
-          <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-3">
-            <h3 className="text-xs font-black uppercase text-amber-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+            <h3 className="text-xs font-extrabold text-white flex items-center gap-2">
               <GitFork className="w-4 h-4" /> Alokasi Peringkat Klasemen ke Playoff
             </h3>
 
@@ -248,24 +269,24 @@ export default function SetupView({ onOpenBulkModal }) {
           {/* Teams Chip List */}
           <div className="flex flex-wrap gap-2 p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 min-h-[90px] max-h-56 overflow-y-auto">
             {teams.length === 0 ? (
-              <span className="text-slate-500 text-xs italic m-auto">
-                Belum ada peserta. Tambahkan tim di atas!
-              </span>
+              <div className="w-full text-center py-6 text-xs text-slate-500 italic">
+                Belum ada tim terdaftar. Tambahkan peserta di atas atau klik "Paste Banyak Nama Sekaligus".
+              </div>
             ) : (
-              teams.map((t) => (
+              teams.map((t, idx) => (
                 <div
-                  key={t.id}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-slate-200"
+                  key={t.id || idx}
+                  className="flex items-center gap-2 bg-slate-900 border border-slate-700/80 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-200 group hover:border-slate-500 transition"
                 >
-                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{t.name}</span>
-                  {t.player && <span className="text-slate-500 font-normal">({t.player})</span>}
+                  <span className="text-[10px] text-slate-500 font-mono">#{idx + 1}</span>
+                  <span className="text-white">{t.name || t}</span>
+                  {t.player && <span className="text-[10px] text-slate-400">({t.player})</span>}
                   <button
                     onClick={() => removeTeam(t.id)}
-                    className="text-slate-500 hover:text-red-400 transition ml-1"
-                    title="Hapus peserta"
+                    className="text-slate-500 hover:text-red-400 p-0.5 rounded transition ml-1"
+                    title="Hapus Tim"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))
@@ -273,10 +294,10 @@ export default function SetupView({ onOpenBulkModal }) {
           </div>
         </div>
 
-        {/* Manual Group Assignment (For Cup mode) */}
-        {isCup && groupKeys.length > 0 && (
-          <div className="bg-slate-950/90 border border-slate-800 p-4 rounded-2xl space-y-3">
-            <h3 className="text-xs font-extrabold text-white flex items-center gap-2 border-b border-slate-800 pb-2">
+        {/* Group Distribution (Cup Mode Only) */}
+        {isCup && (
+          <div className="space-y-3 pt-2">
+            <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
               <span>Pengaturan Pembagian Grup Manual Peserta</span>
             </h3>
@@ -318,7 +339,7 @@ export default function SetupView({ onOpenBulkModal }) {
         <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={() => {
-              if (window.confirm('Yakin ingin mereset semua skor pertandingan turnamen ini?')) {
+              if (window.confirm('Yakin ingin mereset semua skor pertandingan turnamen ini? (Sistem otomatis menyimpan snapshot cadangan sebelum mereset)')) {
                 resetScores();
               }
             }}
@@ -330,7 +351,7 @@ export default function SetupView({ onOpenBulkModal }) {
 
           <button
             onClick={() => {
-              if (window.confirm('Generate ulang akan menyusun jadwal baru untuk semua peserta. Lanjutkan?')) {
+              if (window.confirm('Generate ulang akan menyusun jadwal baru untuk semua peserta. (Sistem otomatis menyimpan snapshot cadangan sebelum generate)')) {
                 regenerateTournamentSchedule();
               }
             }}

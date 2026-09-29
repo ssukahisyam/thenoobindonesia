@@ -1,6 +1,6 @@
-// Firebase Realtime Database Service for Multi-Device Cloud Sync
+// Firebase Realtime Database Service for Multi-Device Cloud Sync & Automated Snapshots
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, set, onValue, off } from 'firebase/database';
+import { getDatabase, ref, set, update, onValue, off, get, child, remove } from 'firebase/database';
 
 export const DEFAULT_FIREBASE_CONFIG = {
   apiKey: "AIzaSyAN7ifCozONKz0kNj5DnfEL_mkZkPMMk5M",
@@ -13,6 +13,41 @@ export const DEFAULT_FIREBASE_CONFIG = {
 };
 
 const STORAGE_KEY_CUSTOM_FB = 'efootball_custom_firebase_config';
+const MAX_CLOUD_SNAPSHOTS = 20;
+
+// Smart Merge: Preserves existing valid scores so stale clients cannot wipe out filled matches
+export function mergeTournamentData(existing, incoming) {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+
+  const merged = { ...incoming };
+
+  // 1. Merge group matches non-destructively
+  if (existing.groupMatches && incoming.groupMatches) {
+    const existingMap = new Map();
+    existing.groupMatches.forEach(m => existingMap.set(m.id, m));
+
+    merged.groupMatches = incoming.groupMatches.map(inMatch => {
+      const exMatch = existingMap.get(inMatch.id);
+      if (!exMatch) return inMatch;
+
+      const inHasScore = inMatch.homeScore !== null && inMatch.homeScore !== undefined && inMatch.awayScore !== null && inMatch.awayScore !== undefined;
+      const exHasScore = exMatch.homeScore !== null && exMatch.homeScore !== undefined && exMatch.awayScore !== null && exMatch.awayScore !== undefined;
+
+      if (!inHasScore && exHasScore) {
+        // Keep existing valid score instead of overwriting with null
+        return {
+          ...inMatch,
+          homeScore: exMatch.homeScore,
+          awayScore: exMatch.awayScore
+        };
+      }
+      return inMatch;
+    });
+  }
+
+  return merged;
+}
 
 class FirebaseService {
   constructor() {
@@ -21,6 +56,7 @@ class FirebaseService {
     this.status = 'disconnected'; // 'connected' | 'connecting' | 'error' | 'disconnected'
     this.statusListeners = new Set();
     this.isApplyingRemote = false;
+    this.lastSnapshotTime = 0;
 
     this.init();
   }
@@ -84,20 +120,101 @@ class FirebaseService {
     return () => this.statusListeners.delete(cb);
   }
 
-  // Save single active tournament to Firebase Cloud
-  async saveTournamentToCloud(tournament) {
+  // Count finished matches for summary
+  getFinishedMatchesCount(tournament) {
+    if (!tournament) return 0;
+    const groupCount = (tournament.groupMatches || []).filter(
+      m => m.homeScore !== null && m.homeScore !== undefined
+    ).length;
+    const koCount = (tournament.knockoutMatches || []).filter(
+      m => m.winner
+    ).length;
+    return groupCount + koCount;
+  }
+
+  // Automated Cloud Snapshot creation (runs on score changes & significant events)
+  async createCloudSnapshot(tournament, label = 'Auto-Snapshot') {
+    if (!this.db || !tournament || !tournament.id) return;
+
+    try {
+      const now = Date.now();
+      // Throttle automatic snapshots to max once every 10 seconds unless explicit
+      if (label === 'Auto-Snapshot' && now - this.lastSnapshotTime < 10000) {
+        return;
+      }
+      this.lastSnapshotTime = now;
+
+      const finishedCount = this.getFinishedMatchesCount(tournament);
+      const snapshotKey = `snap_${now}`;
+      const snapshotRef = ref(this.db, `snapshots/${tournament.id}/${snapshotKey}`);
+
+      const snapshotData = {
+        key: snapshotKey,
+        timestamp: new Date().toISOString(),
+        label,
+        tournamentName: tournament.name || 'Turnamen',
+        tournamentId: tournament.id,
+        finishedCount,
+        totalMatches: tournament.groupMatches?.length || 0,
+        tournamentState: tournament
+      };
+
+      await set(snapshotRef, snapshotData);
+
+      // Clean up oldest snapshots if more than MAX_CLOUD_SNAPSHOTS
+      const allSnapshotsRef = ref(this.db, `snapshots/${tournament.id}`);
+      const snap = await get(allSnapshotsRef);
+      if (snap.exists()) {
+        const all = snap.val();
+        const keys = Object.keys(all).sort();
+        if (keys.length > MAX_CLOUD_SNAPSHOTS) {
+          const toDelete = keys.slice(0, keys.length - MAX_CLOUD_SNAPSHOTS);
+          for (const k of toDelete) {
+            await remove(ref(this.db, `snapshots/${tournament.id}/${k}`));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Could not create cloud snapshot:', err);
+    }
+  }
+
+  // Fetch all cloud snapshots for a tournament
+  async getCloudSnapshots(tournamentId) {
+    if (!this.db || !tournamentId) return [];
+
+    try {
+      const snapRef = ref(this.db, `snapshots/${tournamentId}`);
+      const snapshot = await get(snapRef);
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        return Object.values(data).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      }
+      return [];
+    } catch (err) {
+      console.error('Error fetching cloud snapshots:', err);
+      return [];
+    }
+  }
+
+  // Save single active tournament to Firebase Cloud + Auto Snapshot
+  async saveTournamentToCloud(tournament, options = {}) {
     if (!this.db || !tournament || this.isApplyingRemote) return;
 
     try {
       const tournamentRef = ref(this.db, `tournaments/${tournament.id}`);
       const activeIdRef = ref(this.db, 'activeTournamentId');
 
-      await set(tournamentRef, {
+      const payload = {
         ...tournament,
         lastCloudSync: new Date().toISOString()
-      });
+      };
 
+      await set(tournamentRef, payload);
       await set(activeIdRef, tournament.id);
+
+      // Create snapshot automatically
+      this.createCloudSnapshot(payload, options.snapshotLabel || 'Auto-Snapshot');
     } catch (error) {
       console.error('Error uploading tournament to Firebase:', error);
       this.setStatus('error');
