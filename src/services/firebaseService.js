@@ -1,6 +1,6 @@
 // Firebase Realtime Database Service for Multi-Device Cloud Sync
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, set, onValue, off, get, child } from 'firebase/database';
+import { getDatabase, ref, set, onValue, off } from 'firebase/database';
 
 export const DEFAULT_FIREBASE_CONFIG = {
   apiKey: "AIzaSyAN7ifCozONKz0kNj5DnfEL_mkZkPMMk5M",
@@ -20,7 +20,6 @@ class FirebaseService {
     this.db = null;
     this.status = 'disconnected'; // 'connected' | 'connecting' | 'error' | 'disconnected'
     this.statusListeners = new Set();
-    this.activeTournamentListener = null;
     this.isApplyingRemote = false;
 
     this.init();
@@ -127,31 +126,32 @@ class FirebaseService {
     }
   }
 
-  // Listen to remote changes for live multi-user / spectator view
-  subscribeToCloudUpdates(onRemoteTournamentChange) {
+  // Listen to remote changes for both all tournaments & active tournament
+  subscribeToCloudUpdates(onRemoteUpdate) {
     if (!this.db) return () => {};
 
     try {
+      const tournamentsRef = ref(this.db, 'tournaments');
       const activeRef = ref(this.db, 'activeTournamentId');
       
-      const unsubscribe = onValue(activeRef, (snapshot) => {
-        const activeId = snapshot.val();
-        if (!activeId) return;
+      let currentActiveId = null;
 
-        const targetRef = ref(this.db, `tournaments/${activeId}`);
-        onValue(targetRef, (tSnapshot) => {
-          if (tSnapshot.exists()) {
-            const data = tSnapshot.val();
-            this.isApplyingRemote = true;
-            try {
-              onRemoteTournamentChange(data);
-            } finally {
-              setTimeout(() => {
-                this.isApplyingRemote = false;
-              }, 100);
-            }
+      const unsubActive = onValue(activeRef, (snapshot) => {
+        currentActiveId = snapshot.val();
+      });
+
+      const unsubTournaments = onValue(tournamentsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const allTournamentsObj = snapshot.val();
+          this.isApplyingRemote = true;
+          try {
+            onRemoteUpdate(allTournamentsObj, currentActiveId);
+          } finally {
+            setTimeout(() => {
+              this.isApplyingRemote = false;
+            }, 100);
           }
-        });
+        }
       }, (err) => {
         console.error('Firebase onValue error:', err);
         this.setStatus('error');
@@ -159,6 +159,7 @@ class FirebaseService {
 
       return () => {
         off(activeRef);
+        off(tournamentsRef);
       };
     } catch (err) {
       console.error('Error setting up Firebase cloud listener:', err);

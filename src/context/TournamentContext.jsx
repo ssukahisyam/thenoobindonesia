@@ -20,7 +20,7 @@ export function buildTournamentStructure(tournament) {
   const mode = t.mode || TOURNAMENT_MODES.LEAGUE;
   const config = t.config || DEFAULT_CONFIG;
   const teams = t.teams || [];
-  const teamNames = teams.map(x => x.name);
+  const teamNames = teams.map(x => (typeof x === 'string' ? x : x.name));
 
   if (mode === TOURNAMENT_MODES.LEAGUE) {
     t.groups = {
@@ -127,10 +127,34 @@ export function TournamentProvider({ children }) {
       setCloudStatus(st);
     });
 
-    const unsubUpdates = firebaseService.subscribeToCloudUpdates((remoteData) => {
-      if (remoteData && remoteData.id) {
-        storage.saveTournament(remoteData);
-        setActiveTournament(remoteData);
+    // Real-time synchronization of all slots and active tournament
+    const unsubUpdates = firebaseService.subscribeToCloudUpdates((allTournamentsObj, activeId) => {
+      if (allTournamentsObj && typeof allTournamentsObj === 'object') {
+        let activeToSet = null;
+        const targetActiveId = activeId || storage.getActiveTournamentId();
+
+        for (const [tId, tData] of Object.entries(allTournamentsObj)) {
+          if (tData && tData.name) {
+            const formatted = {
+              ...tData,
+              id: tData.id || tId
+            };
+            storage.saveTournament(formatted);
+
+            if (formatted.id === targetActiveId) {
+              activeToSet = formatted;
+            }
+          }
+        }
+
+        if (activeToSet) {
+          setActiveTournament(activeToSet);
+          storage.setActiveTournamentId(activeToSet.id);
+        } else if (targetActiveId) {
+          const fallback = storage.getTournamentById(targetActiveId);
+          if (fallback) setActiveTournament(fallback);
+        }
+
         refreshList();
       }
     });
@@ -188,7 +212,7 @@ export function TournamentProvider({ children }) {
         champion: null
       },
       topScorers: [],
-      wheelRemainingTeams: (newTournamentData.teams || []).map(t => t.name)
+      wheelRemainingTeams: (newTournamentData.teams || []).map(t => (typeof t === 'string' ? t : t.name))
     };
 
     // Automatically build all schedules and brackets
@@ -266,7 +290,7 @@ export function TournamentProvider({ children }) {
       } else {
         const totalPlayoff = (tData.config?.playoffUpperCount || 2) + (tData.config?.playoffLowerCount || 2);
         const topTeams = leagueStandings.slice(0, totalPlayoff).map(s => s.name);
-        if (tData.knockoutMatches.length > 0 && topTeams.length > 0) {
+        if (tData.knockoutMatches?.length > 0 && topTeams.length > 0) {
           const sf1 = tData.knockoutMatches.find(m => m.id === 'SF1');
           const sf2 = tData.knockoutMatches.find(m => m.id === 'SF2');
           if (sf1) {
@@ -283,8 +307,8 @@ export function TournamentProvider({ children }) {
     } else if (isCup) {
       const gA = computedStandings['A'] || [];
       const gB = computedStandings['B'] || [];
-      const sf1 = tData.knockoutMatches.find(m => m.id === 'SF1');
-      const sf2 = tData.knockoutMatches.find(m => m.id === 'SF2');
+      const sf1 = tData.knockoutMatches?.find(m => m.id === 'SF1');
+      const sf2 = tData.knockoutMatches?.find(m => m.id === 'SF2');
 
       if (sf1 && sf2) {
         if (gA[0]) sf1.homeTeam = gA[0].name;
@@ -292,7 +316,9 @@ export function TournamentProvider({ children }) {
         if (gB[0]) sf2.homeTeam = gB[0].name;
         if (gA[1]) sf2.awayTeam = gA[1].name;
       }
-      tData.knockoutMatches = evaluateSingleEliminationMatchWinners(tData.knockoutMatches, tData.config);
+      if (tData.knockoutMatches) {
+        tData.knockoutMatches = evaluateSingleEliminationMatchWinners(tData.knockoutMatches, tData.config);
+      }
     }
 
     return tData;
@@ -455,7 +481,7 @@ export function TournamentProvider({ children }) {
     const trimmed = teamName.trim();
     if (!trimmed) return;
 
-    if (activeTournament.teams.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
+    if (activeTournament.teams.some(t => (t.name || t).toLowerCase() === trimmed.toLowerCase())) {
       showToast('Nama tim/player sudah ada!', 'warning');
       return;
     }
@@ -480,7 +506,7 @@ export function TournamentProvider({ children }) {
   const bulkAddTeams = useCallback((namesArray) => {
     if (!activeTournament || !namesArray || namesArray.length === 0) return;
 
-    const existingNames = new Set(activeTournament.teams.map(t => t.name.toLowerCase()));
+    const existingNames = new Set(activeTournament.teams.map(t => (t.name || t).toLowerCase()));
     const newTeams = [];
 
     namesArray.forEach((rawName, i) => {
@@ -525,7 +551,7 @@ export function TournamentProvider({ children }) {
 
     updated = buildTournamentStructure(updated);
     saveActiveTournament(updated);
-    showToast(`'${teamToRemove.name}' telah dihapus.`);
+    showToast(`'${teamToRemove.name || teamToRemove}' telah dihapus.`);
   }, [activeTournament, saveActiveTournament, showToast]);
 
   // Update Config
