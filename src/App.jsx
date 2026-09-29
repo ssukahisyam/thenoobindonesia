@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { TournamentProvider, useTournament } from './context/TournamentContext';
 import Navbar from './components/layout/Navbar';
 import HeaderStats from './components/layout/HeaderStats';
@@ -13,6 +13,51 @@ import CreateTournamentModal from './components/modals/CreateTournamentModal';
 import BulkAddTeamsModal from './components/modals/BulkAddTeamsModal';
 import CloudSyncModal from './components/modals/CloudSyncModal';
 import HistoryBackupModal from './components/modals/HistoryBackupModal';
+import { AlertCircle, RotateCcw } from 'lucide-react';
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-8 max-w-md w-full text-center space-y-4 shadow-2xl">
+            <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
+            <h2 className="text-lg font-bold text-white">Terjadi Kendala Memuat Data</h2>
+            <p className="text-xs text-slate-400">
+              Sistem telah mendeteksi error: {this.state.error?.message || 'Unknown error'}
+            </p>
+            <button
+              onClick={this.handleReload}
+              className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl inline-flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Muat Ulang Halaman</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function MainLayout() {
   const { activeTournament } = useTournament();
@@ -125,8 +170,10 @@ function MainLayout() {
 
 export default function App() {
   return (
-    <TournamentProvider>
-      <MainLayout />
-    </TournamentProvider>
+    <ErrorBoundary>
+      <TournamentProvider>
+        <MainLayout />
+      </TournamentProvider>
+    </ErrorBoundary>
   );
 }

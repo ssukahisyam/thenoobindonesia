@@ -35,21 +35,22 @@ export default function WheelSpinView({ onNavigateToStandings }) {
   const [currentAngle, setCurrentAngle] = useState(0);
   const [selectedWinner, setSelectedWinner] = useState(null);
 
+  // Initialize remaining teams
+  useEffect(() => {
+    if (!activeTournament) return;
+    if (activeTournament.wheelRemainingTeams && activeTournament.wheelRemainingTeams.length > 0) {
+      setRemainingTeams(activeTournament.wheelRemainingTeams);
+    } else if (activeTournament.teams) {
+      setRemainingTeams(activeTournament.teams.map(t => t.name));
+    }
+  }, [activeTournament]);
+
   if (!activeTournament) return null;
 
   const mode = activeTournament.mode;
   const isCup = mode === 'cup';
   const groupKeys = Object.keys(activeTournament.groups || {});
   const targetGroupName = groupKeys[currentTargetGroupIdx % (groupKeys.length || 1)] || 'Liga';
-
-  // Initialize remaining teams
-  useEffect(() => {
-    if (activeTournament.wheelRemainingTeams && activeTournament.wheelRemainingTeams.length > 0) {
-      setRemainingTeams(activeTournament.wheelRemainingTeams);
-    } else {
-      setRemainingTeams(activeTournament.teams.map(t => t.name));
-    }
-  }, [activeTournament]);
 
   // Draw the Wheel on Canvas
   const drawWheel = (angleOffset = currentAngle) => {

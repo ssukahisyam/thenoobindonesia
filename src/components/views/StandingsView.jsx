@@ -34,27 +34,15 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
   const [selectedGroupFilter, setSelectedGroupFilter] = useState('all');
   const [selectedMatchdayFilter, setSelectedMatchdayFilter] = useState('all');
 
-  if (!activeTournament) {
-    return (
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-lg mx-auto my-12 shadow-2xl">
-        <Trophy className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
-        <h3 className="text-lg font-black text-white">Memuat Data Turnamen...</h3>
-        <p className="text-xs text-slate-400">
-          Sedang menghubungkan ke Firebase Cloud. Jika belum memilih turnamen, klik tombol <b>Save Slots</b> di kanan atas.
-        </p>
-      </div>
-    );
-  }
-
-  const mode = activeTournament.mode;
+  const mode = activeTournament?.mode || 'league';
   const isLeague = mode === 'league';
   const isKnockout = mode === 'knockout';
-  const groupMatches = Array.isArray(activeTournament.groupMatches)
+  const groupMatches = Array.isArray(activeTournament?.groupMatches)
     ? activeTournament.groupMatches
-    : Object.values(activeTournament.groupMatches || {});
-  const teams = Array.isArray(activeTournament.teams)
+    : Object.values(activeTournament?.groupMatches || {});
+  const teams = Array.isArray(activeTournament?.teams)
     ? activeTournament.teams
-    : Object.values(activeTournament.teams || {});
+    : Object.values(activeTournament?.teams || {});
   const teamNames = teams.map(t => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean);
 
   // Group filter list
@@ -71,6 +59,7 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
 
   // Filtered matches logic with Search Query, Player Chip, Status Filter, Group, & Matchday
   const filteredMatches = useMemo(() => {
+    if (!activeTournament) return [];
     return groupMatches.filter(m => {
       if (!m) return false;
       const homeName = m.home || '';
@@ -103,10 +92,11 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
 
       return matchSearch && matchPlayer && matchStatus && matchGroup && matchRound;
     });
-  }, [groupMatches, searchQuery, selectedPlayerFilter, statusFilter, selectedGroupFilter, selectedMatchdayFilter]);
+  }, [activeTournament, groupMatches, searchQuery, selectedPlayerFilter, statusFilter, selectedGroupFilter, selectedMatchdayFilter]);
 
   // Group filtered matches by section (e.g. "Matchday 1" or "Grup A - Matchday 1")
   const matchesByGroupAndRound = useMemo(() => {
+    if (!activeTournament) return {};
     const grouped = {};
     filteredMatches.forEach(m => {
       const key = isLeague ? `Matchday ${m.round}` : `Grup ${m.group} - Matchday ${m.round}`;
@@ -114,7 +104,19 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
       grouped[key].push(m);
     });
     return grouped;
-  }, [filteredMatches, isLeague]);
+  }, [activeTournament, filteredMatches, isLeague]);
+
+  if (!activeTournament) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-lg mx-auto my-12 shadow-2xl">
+        <Trophy className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
+        <h3 className="text-lg font-black text-white">Memuat Data Turnamen...</h3>
+        <p className="text-xs text-slate-400">
+          Sedang menghubungkan ke Firebase Cloud. Jika belum memilih turnamen, klik tombol <b>Save Slots</b> di kanan atas.
+        </p>
+      </div>
+    );
+  }
 
   const handleCopyStandingsWA = () => {
     const text = generateStandingsWAText(activeTournament, standingsMap);

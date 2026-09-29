@@ -26,15 +26,13 @@ export default function BracketView({ onNavigateToShare }) {
     showToast
   } = useTournament();
 
-  if (!activeTournament) return null;
-
-  const mode = activeTournament.mode;
-  const config = activeTournament.config || {};
+  const mode = activeTournament?.mode || 'league';
+  const config = activeTournament?.config || {};
   const isDoubleElim = config.playoffType === 'double_elim';
   const is2Legs = config.knockoutLegs === 2;
 
-  const doubleElim = activeTournament.doubleElimination;
-  const knockoutMatches = activeTournament.knockoutMatches || [];
+  const doubleElim = activeTournament?.doubleElimination;
+  const knockoutMatches = activeTournament?.knockoutMatches || [];
 
   // Eliminated teams from League Stage
   const leagueStandings = standingsMap['Liga'] || [];
@@ -56,6 +54,8 @@ export default function BracketView({ onNavigateToShare }) {
       });
     }
   }, [champion]);
+
+  if (!activeTournament) return null;
 
   const handleCopyBracketWA = () => {
     let text = '';
