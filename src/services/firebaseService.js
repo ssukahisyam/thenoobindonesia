@@ -22,12 +22,27 @@ export function mergeTournamentData(existing, incoming) {
 
   const merged = { ...incoming };
 
-  // 1. Merge group matches non-destructively
-  if (existing.groupMatches && incoming.groupMatches) {
-    const existingMap = new Map();
-    existing.groupMatches.forEach(m => existingMap.set(m.id, m));
+  // Ensure groupMatches is an array
+  const incomingMatches = Array.isArray(incoming.groupMatches)
+    ? incoming.groupMatches
+    : incoming.groupMatches && typeof incoming.groupMatches === 'object'
+    ? Object.values(incoming.groupMatches)
+    : [];
 
-    merged.groupMatches = incoming.groupMatches.map(inMatch => {
+  const existingMatches = Array.isArray(existing.groupMatches)
+    ? existing.groupMatches
+    : existing.groupMatches && typeof existing.groupMatches === 'object'
+    ? Object.values(existing.groupMatches)
+    : [];
+
+  if (existingMatches.length > 0 && incomingMatches.length > 0) {
+    const existingMap = new Map();
+    existingMatches.forEach(m => {
+      if (m && m.id) existingMap.set(m.id, m);
+    });
+
+    merged.groupMatches = incomingMatches.map(inMatch => {
+      if (!inMatch) return inMatch;
       const exMatch = existingMap.get(inMatch.id);
       if (!exMatch) return inMatch;
 
@@ -44,6 +59,13 @@ export function mergeTournamentData(existing, incoming) {
       }
       return inMatch;
     });
+  } else {
+    merged.groupMatches = incomingMatches.length > 0 ? incomingMatches : existingMatches;
+  }
+
+  // Ensure teams is an array
+  if (incoming.teams && typeof incoming.teams === 'object' && !Array.isArray(incoming.teams)) {
+    merged.teams = Object.values(incoming.teams);
   }
 
   return merged;
@@ -123,11 +145,17 @@ class FirebaseService {
   // Count finished matches for summary
   getFinishedMatchesCount(tournament) {
     if (!tournament) return 0;
-    const groupCount = (tournament.groupMatches || []).filter(
-      m => m.homeScore !== null && m.homeScore !== undefined
+    const groupMatches = Array.isArray(tournament.groupMatches)
+      ? tournament.groupMatches
+      : Object.values(tournament.groupMatches || {});
+    const groupCount = groupMatches.filter(
+      m => m && m.homeScore !== null && m.homeScore !== undefined
     ).length;
-    const koCount = (tournament.knockoutMatches || []).filter(
-      m => m.winner
+    const koMatches = Array.isArray(tournament.knockoutMatches)
+      ? tournament.knockoutMatches
+      : Object.values(tournament.knockoutMatches || {});
+    const koCount = koMatches.filter(
+      m => m && m.winner
     ).length;
     return groupCount + koCount;
   }
@@ -251,23 +279,30 @@ class FirebaseService {
       const tournamentsRef = ref(this.db, 'tournaments');
       const activeRef = ref(this.db, 'activeTournamentId');
       
-      let currentActiveId = null;
+      let latestTournaments = null;
+      let latestActiveId = null;
+
+      const trigger = () => {
+        if (!latestTournaments) return;
+        this.isApplyingRemote = true;
+        try {
+          onRemoteUpdate(latestTournaments, latestActiveId);
+        } finally {
+          setTimeout(() => {
+            this.isApplyingRemote = false;
+          }, 100);
+        }
+      };
 
       const unsubActive = onValue(activeRef, (snapshot) => {
-        currentActiveId = snapshot.val();
+        latestActiveId = snapshot.val();
+        trigger();
       });
 
       const unsubTournaments = onValue(tournamentsRef, (snapshot) => {
         if (snapshot.exists()) {
-          const allTournamentsObj = snapshot.val();
-          this.isApplyingRemote = true;
-          try {
-            onRemoteUpdate(allTournamentsObj, currentActiveId);
-          } finally {
-            setTimeout(() => {
-              this.isApplyingRemote = false;
-            }, 100);
-          }
+          latestTournaments = snapshot.val();
+          trigger();
         }
       }, (err) => {
         console.error('Firebase onValue error:', err);

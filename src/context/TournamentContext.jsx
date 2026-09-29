@@ -19,8 +19,12 @@ export function buildTournamentStructure(tournament) {
   const t = { ...tournament };
   const mode = t.mode || TOURNAMENT_MODES.LEAGUE;
   const config = t.config || DEFAULT_CONFIG;
-  const teams = t.teams || [];
-  const teamNames = teams.map(x => (typeof x === 'string' ? x : x.name));
+  const teams = Array.isArray(t.teams)
+    ? t.teams
+    : t.teams && typeof t.teams === 'object'
+    ? Object.values(t.teams)
+    : [];
+  const teamNames = teams.map(x => (typeof x === 'string' ? x : x.name)).filter(Boolean);
 
   if (mode === TOURNAMENT_MODES.LEAGUE) {
     t.groups = {
@@ -130,34 +134,47 @@ export function TournamentProvider({ children }) {
     // Real-time synchronization of all slots and active tournament
     const unsubUpdates = firebaseService.subscribeToCloudUpdates((allTournamentsObj, activeId) => {
       if (allTournamentsObj && typeof allTournamentsObj === 'object') {
-        let activeToSet = null;
-        const targetActiveId = activeId || storage.getActiveTournamentId();
+        const validTournaments = [];
 
         for (const [tId, tData] of Object.entries(allTournamentsObj)) {
-          if (tData && tData.name) {
+          if (tData && (tData.name || tData.teams)) {
             const formatted = {
               ...tData,
-              id: tData.id || tId
+              id: tData.id || tId,
+              name: tData.name || 'Turnamen'
             };
 
             const existingLocal = storage.getTournamentById(formatted.id);
             // Use smart merge so a stale remote update doesn't erase local scores
             const merged = mergeTournamentData(existingLocal, formatted);
 
+            validTournaments.push(merged);
             storage.saveTournament(merged, { createSnapshot: false });
-
-            if (formatted.id === targetActiveId) {
-              activeToSet = merged;
-            }
           }
+        }
+
+        let activeToSet = null;
+
+        // Priority 1: activeId from cloud
+        if (activeId) {
+          activeToSet = validTournaments.find(t => t.id === activeId);
+        }
+        // Priority 2: storage active ID
+        if (!activeToSet) {
+          const localActiveId = storage.getActiveTournamentId();
+          activeToSet = validTournaments.find(t => t.id === localActiveId);
+        }
+        // Priority 3: fallback to most recently updated tournament with teams (e.g. Season 3)
+        if (!activeToSet && validTournaments.length > 0) {
+          const withTeams = validTournaments.filter(t => t.teams && t.teams.length > 0);
+          const candidates = withTeams.length > 0 ? withTeams : validTournaments;
+          candidates.sort((a, b) => new Date(b.updatedAt || b.lastCloudSync || 0) - new Date(a.updatedAt || a.lastCloudSync || 0));
+          activeToSet = candidates[0];
         }
 
         if (activeToSet) {
           setActiveTournament(activeToSet);
           storage.setActiveTournamentId(activeToSet.id);
-        } else if (targetActiveId) {
-          const fallback = storage.getTournamentById(targetActiveId);
-          if (fallback) setActiveTournament(fallback);
         }
 
         refreshList();

@@ -34,47 +34,65 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
   const [selectedGroupFilter, setSelectedGroupFilter] = useState('all');
   const [selectedMatchdayFilter, setSelectedMatchdayFilter] = useState('all');
 
-  if (!activeTournament) return null;
+  if (!activeTournament) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-4 max-w-lg mx-auto my-12 shadow-2xl">
+        <Trophy className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
+        <h3 className="text-lg font-black text-white">Memuat Data Turnamen...</h3>
+        <p className="text-xs text-slate-400">
+          Sedang menghubungkan ke Firebase Cloud. Jika belum memilih turnamen, klik tombol <b>Save Slots</b> di kanan atas.
+        </p>
+      </div>
+    );
+  }
 
   const mode = activeTournament.mode;
   const isLeague = mode === 'league';
   const isKnockout = mode === 'knockout';
-  const groupMatches = activeTournament.groupMatches || [];
-  const teams = activeTournament.teams || [];
-  const teamNames = teams.map(t => (typeof t === 'string' ? t : t.name));
+  const groupMatches = Array.isArray(activeTournament.groupMatches)
+    ? activeTournament.groupMatches
+    : Object.values(activeTournament.groupMatches || {});
+  const teams = Array.isArray(activeTournament.teams)
+    ? activeTournament.teams
+    : Object.values(activeTournament.teams || {});
+  const teamNames = teams.map(t => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean);
 
   // Group filter list
-  const groupKeys = Object.keys(standingsMap);
+  const groupKeys = Object.keys(standingsMap || {});
 
   // Matchday filter list
   const matchdays = Array.from(
-    new Set(groupMatches.map(m => m.round))
+    new Set(groupMatches.map(m => m?.round).filter(Boolean))
   ).sort((a, b) => a - b);
 
   // Total finished & unplayed stats
-  const totalFinished = groupMatches.filter(m => m.homeScore !== null && m.awayScore !== null).length;
+  const totalFinished = groupMatches.filter(m => m && m.homeScore !== null && m.homeScore !== undefined && m.awayScore !== null && m.awayScore !== undefined).length;
   const totalUnplayed = groupMatches.length - totalFinished;
 
   // Filtered matches logic with Search Query, Player Chip, Status Filter, Group, & Matchday
   const filteredMatches = useMemo(() => {
     return groupMatches.filter(m => {
+      if (!m) return false;
+      const homeName = m.home || '';
+      const awayName = m.away || '';
+
       // 1. Search Query (matches home or away)
       const query = searchQuery.trim().toLowerCase();
       const matchSearch =
         !query ||
-        m.home.toLowerCase().includes(query) ||
-        m.away.toLowerCase().includes(query) ||
+        homeName.toLowerCase().includes(query) ||
+        awayName.toLowerCase().includes(query) ||
         `matchday ${m.round}`.includes(query) ||
         `md ${m.round}`.includes(query);
 
       // 2. Player Chip Filter
       const matchPlayer =
         selectedPlayerFilter === 'all' ||
-        m.home.toLowerCase() === selectedPlayerFilter.toLowerCase() ||
-        m.away.toLowerCase() === selectedPlayerFilter.toLowerCase();
+        homeName.toLowerCase() === selectedPlayerFilter.toLowerCase() ||
+        awayName.toLowerCase() === selectedPlayerFilter.toLowerCase();
 
       // 3. Status Filter (finished vs unplayed)
-      const isFinished = m.homeScore !== null && m.awayScore !== null;
+      const isFinished = m.homeScore !== null && m.homeScore !== undefined && m.awayScore !== null && m.awayScore !== undefined;
       let matchStatus = true;
       if (statusFilter === 'unplayed') matchStatus = !isFinished;
       if (statusFilter === 'finished') matchStatus = isFinished;
@@ -595,8 +613,8 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
                           >
                             {/* Home Team */}
                             <div className="flex-1 text-right font-black text-xs sm:text-sm text-slate-100 truncate">
-                              <span className={searchQuery && m.home.toLowerCase().includes(searchQuery.toLowerCase()) ? 'text-emerald-400 font-black underline' : ''}>
-                                {m.home}
+                              <span className={searchQuery && (m.home || '').toLowerCase().includes(searchQuery.toLowerCase()) ? 'text-emerald-400 font-black underline' : ''}>
+                                {m.home || 'Tim'}
                               </span>
                             </div>
 
@@ -606,11 +624,11 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
                                 type="number"
                                 min="0"
                                 max="99"
-                                value={m.homeScore !== null ? m.homeScore : ''}
+                                value={m.homeScore !== null && m.homeScore !== undefined ? m.homeScore : ''}
                                 onChange={(e) => updateGroupScore(m.id, 'home', e.target.value)}
                                 placeholder="-"
                                 className={`w-9 h-8 bg-slate-950 border rounded-lg text-center font-black text-sm focus:outline-none focus:border-emerald-400 ${
-                                  m.homeScore !== null ? 'text-emerald-400 border-slate-800' : 'text-slate-500 border-dashed border-slate-700'
+                                  m.homeScore !== null && m.homeScore !== undefined ? 'text-emerald-400 border-slate-800' : 'text-slate-500 border-dashed border-slate-700'
                                 }`}
                               />
                               <span className="text-slate-500 font-bold text-xs">:</span>
@@ -618,19 +636,19 @@ export default function StandingsView({ onNavigateToBracket, onNavigateToShare }
                                 type="number"
                                 min="0"
                                 max="99"
-                                value={m.awayScore !== null ? m.awayScore : ''}
+                                value={m.awayScore !== null && m.awayScore !== undefined ? m.awayScore : ''}
                                 onChange={(e) => updateGroupScore(m.id, 'away', e.target.value)}
                                 placeholder="-"
                                 className={`w-9 h-8 bg-slate-950 border rounded-lg text-center font-black text-sm focus:outline-none focus:border-emerald-400 ${
-                                  m.awayScore !== null ? 'text-emerald-400 border-slate-800' : 'text-slate-500 border-dashed border-slate-700'
+                                  m.awayScore !== null && m.awayScore !== undefined ? 'text-emerald-400 border-slate-800' : 'text-slate-500 border-dashed border-slate-700'
                                 }`}
                               />
                             </div>
 
                             {/* Away Team */}
                             <div className="flex-1 text-left font-black text-xs sm:text-sm text-slate-100 truncate">
-                              <span className={searchQuery && m.away.toLowerCase().includes(searchQuery.toLowerCase()) ? 'text-emerald-400 font-black underline' : ''}>
-                                {m.away}
+                              <span className={searchQuery && (m.away || '').toLowerCase().includes(searchQuery.toLowerCase()) ? 'text-emerald-400 font-black underline' : ''}>
+                                {m.away || 'Tim'}
                               </span>
                             </div>
                           </div>
